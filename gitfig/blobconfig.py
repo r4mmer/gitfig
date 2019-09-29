@@ -137,15 +137,16 @@ class SECTION(ConfigHolder):
 
 
 class RepoObject(object):
-    def __init__(self, repo_uri=None, repo_dir=None, branch='master'):
+    def __init__(self, repo_path=None, branch='master'):
         try:
-            repo = git.Repo(repo_dir)
+            repo = git.Repo(repo_path)
         except (git.NoSuchPathError, git.InvalidGitRepositoryError):
-            if repo_dir is None:
-                repo_dir = tempfile.mkdtemp()
-            repo = git.Repo.clone_from(repo_uri, repo_dir)
+            repo_dir = tempfile.mkdtemp()
+            repo = git.Repo.clone_from(repo_path, repo_dir)
+            self._repo_dir = repo_dir
+        else:
+            self._repo_dir = repo_path
         self._repo = repo
-        self._repo_dir = repo_dir
         self._last_fetch = datetime.now()
         self._branch = branch
 
@@ -157,7 +158,8 @@ class RepoObject(object):
     def sync(self):
         # how to avoid multiple fetch requests?
         # lock config until sync is done?
-        if datetime.now() >= self._last_fetch + timedelta(minutes=5):
+        # if datetime.now() >= self._last_fetch + timedelta(minutes=5):
+        if datetime.now() >= self._last_fetch + timedelta(seconds=20):
             for remote in self._repo.remotes:
                 remote.fetch()
             self._last_fetch = datetime.now()
@@ -173,8 +175,8 @@ class BlobConfig(ConfigHolder):
     # raise ConfigReadError("did not find %r." % (fpath,))
     # raise ConfigReadError("did not successfully read %r." % (fpath,))
 
-    def set_repo(self, repo_uri=None, repo_dir=None, branch='master'):
-        self._repo = RepoObject(repo_uri, repo_dir, branch)
+    def set_repo(self, repo_path=None, branch='master'):
+        dict.__setattr__(self, '_repo', RepoObject(repo_path, branch))
 
     def get_dynamic(self, key):
         self._repo.sync()
@@ -223,16 +225,19 @@ def check_config(fname):
     else:
         return False
 
-# main function for getting a configuration file. gets it from the common
-# configuration location (/etc/pycopia), but if a full path is given then
-# use that instead.
-def get_config(fname, branch='master', repo_uri=None, repo_dir=None, initdict=None, globalspace=None, **kwargs):
-    if repo_uri is None:
+def get_config(fname, branch='master', repo_path=None, initdict=None, globalspace=None, **kwargs):
+    '''
+        `initdict` and extra kwargs will be updated into configuration
+        branch: which branch to get configuration
+        repo_path: if not set will be used from environment GITFIG_REPO_URI
+
+    '''
+    if repo_path is None:
         if 'GITFIG_REPO_URI' not in os.environ:
             raise Exception('No git config repo...')
-        repo_uri = os.environ.get('GITFIG_REPO_URI')
+        repo_path = os.environ.get('GITFIG_REPO_URI')
     cf = BlobConfig()
-    cf.set_repo(repo_uri=repo_uri, repo_dir=repo_dir, branch=branch)
+    cf.set_repo(repo_path=repo_path, branch=branch)
     cf.sync_config(fname, globalspace=globalspace)
     if initdict:
         cf.update(initdict)
