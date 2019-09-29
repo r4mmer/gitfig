@@ -210,7 +210,7 @@ class BlobConfig(ConfigHolder):
             read_blob(blob, gb, self)
         except:
             ex, val, tb = sys.exc_info()
-            warnings.warn("BlobConfig: error reading %s: %s (%s)." % (filename, ex, val))
+            warnings.warn("BlobConfig: error reading blob: %s (%s)." % (ex, val))
 
 
 def check_config(fname):
@@ -229,13 +229,13 @@ def get_config(fname, branch='master', repo_path=None, initdict=None, globalspac
     '''
         `initdict` and extra kwargs will be updated into configuration
         branch: which branch to get configuration
-        repo_path: if not set will be used from environment GITFIG_REPO_URI
+        repo_path: if not set will be used from environment GITFIG_REPO_PATH
 
     '''
     if repo_path is None:
-        if 'GITFIG_REPO_URI' not in os.environ:
+        if 'GITFIG_REPO_PATH' not in os.environ:
             raise Exception('No git config repo...')
-        repo_path = os.environ.get('GITFIG_REPO_URI')
+        repo_path = os.environ.get('GITFIG_REPO_PATH')
     cf = BlobConfig()
     cf.set_repo(repo_path=repo_path, branch=branch)
     cf.sync_config(fname, globalspace=globalspace)
