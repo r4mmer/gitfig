@@ -12,6 +12,7 @@ Pass the repo path (url or directory) to the `get_config` function or as environ
 A configuration repo can hold configurations for any number of projects, you can use branches to separate them or folders
 when calling `get_config` pass the path to the file/directory relative to the root of the repo
 
+```
 .
 ├── README.md
 ├── production
@@ -28,6 +29,7 @@ when calling `get_config` pass the path to the file/directory relative to the ro
     └── proj2
         ├── bar.yaml
         └── foo.yaml
+```
 
 i.e. 'production/proj1/backend.yaml' or ["production", "proj1", "backend.yaml"]
 
