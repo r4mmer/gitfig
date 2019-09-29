@@ -28,6 +28,7 @@ import shutil
 import sys, os
 import tempfile
 import warnings
+from datetime import datetime, timedelta
 
 import git
 import yaml
@@ -43,17 +44,37 @@ class ConfigReadError(BasicConfigError):
     pass
 
 
+def blob_readable(blob):
+    fn, ext = os.path.splitext(blob.name)
+    return ext in ['.py', '.conf', '.yaml', '.yml', '.json']
+
+def read_blob(blob, glbl, loc):
+    fn, ext = os.path.splitext(blob.name)
+    if ext in ['.py', '.conf']:
+        exec(blob.data_stream.read().decode(), glbl, loc)
+    elif ext in ['.yaml', '.yml']:
+        c = yaml.safe_load(blob.data_stream)
+        loc.update(c)
+    elif ext in ['.json']:
+        c = json.load(blob.data_stream)
+        loc.update(c)
+
+def get_pathname(basename):
+    if isinstance(basename, list):
+        return os.path.expandvars(os.path.join(*basename))
+    return os.path.expandvars(basename)
+
+
 class ConfigHolder(dict):
     """ConfigHolder() Holds named configuration information. For convenience,
 it maps attribute access to the real dictionary. This object is lockable, use
 the 'lock' and 'unlock' methods to set its state. If locked, new keys or
 attributes cannot be added, but existing ones may be changed."""
-    def __init__(self, init={}, name=None, repo_dir=None):
+    def __init__(self, init={}, name=None):
         name = name or self.__class__.__name__.lower()
         dict.__init__(self, init)
         dict.__setattr__(self, "_locked", 0)
         dict.__setattr__(self, "_name", name)
-        dict.__setattr__(self, "_repo_dir", repo_dir)
 
     def __getstate__(self):
         return self.__dict__.items()
@@ -115,7 +136,60 @@ class SECTION(ConfigHolder):
         return super(SECTION, self).__str__()
 
 
+class RepoObject(object):
+    def __init__(self, repo_uri=None, repo_dir=None, branch='master'):
+        try:
+            repo = git.Repo(repo_dir)
+        except (git.NoSuchPathError, git.InvalidGitRepositoryError):
+            if repo_dir is None:
+                repo_dir = tempfile.mkdtemp()
+            repo = git.Repo.clone_from(repo_uri, repo_dir)
+        self._repo = repo
+        self._repo_dir = repo_dir
+        self._last_fetch = datetime.now()
+        self._branch = branch
+
+    def get_ref(self, branch=None):
+        if branch is None:
+            branch = self._branch
+        return {r.remote_head: r for r in self._repo.refs if isinstance(r, git.RemoteReference)}[branch]
+
+    def sync(self):
+        # how to avoid multiple fetch requests?
+        # lock config until sync is done?
+        if datetime.now() >= self._last_fetch + timedelta(minutes=5):
+            for remote in self._repo.remotes:
+                remote.fetch()
+            self._last_fetch = datetime.now()
+
+    def cleanup(self):
+        if not self._repo_dir.beginswith(tempfile.gettempdir()):
+            return
+        shutil.rmtree(self._repo_dir)
+
+
 class BlobConfig(ConfigHolder):
+    # raise for repo errors
+    # raise ConfigReadError("did not find %r." % (fpath,))
+    # raise ConfigReadError("did not successfully read %r." % (fpath,))
+
+    def set_repo(self, repo_uri=None, repo_dir=None, branch='master'):
+        self._repo = RepoObject(repo_uri, repo_dir, branch)
+
+    def get_dynamic(self, key):
+        self._repo.sync()
+        return self[key]
+
+    def sync_config(self, fname, globalspace=None):
+        fpath = get_pathname(fname)
+        ref = self._repo.get_ref()
+        tree = ref.commit.tree
+        for item in tree.traverse():
+            if item.path == fpath:
+                if item.type == 'blob':
+                    self.mergeblob(item, globalspace)
+                elif item.type == 'tree':
+                    self.mergetree(item, globalspace)
 
     def mergetree(self, tree, globalspace=None):
         for item in tree.traverse():
@@ -135,31 +209,6 @@ class BlobConfig(ConfigHolder):
         except:
             ex, val, tb = sys.exc_info()
             warnings.warn("BlobConfig: error reading %s: %s (%s)." % (filename, ex, val))
-            return False
-        else:
-            return True
-
-
-def blob_readable(blob):
-    fn, ext = os.path.splitext(blob.name)
-    return ext in ['.py', '.conf', '.yaml', '.yml', '.json']
-
-
-def read_blob(blob, glbl, loc):
-    fn, ext = os.path.splitext(blob.name)
-    if ext in ['.py', '.conf']:
-        exec(blob.data_stream.read().decode(), glbl, loc)
-    elif ext in ['.yaml', '.yml']:
-        c = yaml.safe_load(blob.data_stream)
-        loc.update(c)
-    elif ext in ['.json']:
-        c = json.load(blob.data_stream)
-        loc.update(c)
-
-def get_pathname(basename):
-    if isinstance(basename, list):
-        return os.path.expandvars(os.path.join(*basename))
-    return os.path.expandvars(basename)
 
 
 def check_config(fname):
@@ -177,38 +226,15 @@ def check_config(fname):
 # main function for getting a configuration file. gets it from the common
 # configuration location (/etc/pycopia), but if a full path is given then
 # use that instead.
-def get_config(fname, branch='master', repo_uri=None, initdict=None, globalspace=None, keep_repo=False, **kwargs):
+def get_config(fname, branch='master', repo_uri=None, repo_dir=None, initdict=None, globalspace=None, **kwargs):
     if repo_uri is None:
         if 'GITFIG_REPO_URI' not in os.environ:
             raise Exception('No git config repo...')
         repo_uri = os.environ.get('GITFIG_REPO_URI')
-
-    temp_dir = tempfile.mkdtemp()
-    repo = git.Repo.clone_from(repo_uri, temp_dir)
-    ref = {r.remote_head: r for r in repo.refs if isinstance(r, git.RemoteReference)}[branch]
-    tree = ref.commit.tree
-
-    fpath = get_pathname(fname)
     cf = BlobConfig()
-    for item in tree.traverse():
-        if item.path == fpath:
-            merged = False
-            if item.type == 'blob':
-                merged = cf.mergeblob(item, globalspace)
-            elif item.type == 'tree':
-                merged = cf.mergetree(item, globalspace)
-
-            if not merged:
-                if not keep_repo:
-                    shutil.rmtree(temp_dir)
-                raise ConfigReadError("did not successfully read %r." % (fpath,))
-
-            if initdict:
-                cf.update(initdict)
-            cf.update(kwargs)
-            if not keep_repo:
-                shutil.rmtree(temp_dir)
-            return cf
-    if not keep_repo:
-        shutil.rmtree(temp_dir)
-    raise ConfigReadError("did not find %r." % (fpath,))
+    cf.set_repo(repo_uri=repo_uri, repo_dir=repo_dir, branch=branch)
+    cf.sync_config(fname, globalspace=globalspace)
+    if initdict:
+        cf.update(initdict)
+    cf.update(kwargs)
+    return cf

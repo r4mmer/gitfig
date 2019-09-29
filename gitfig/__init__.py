@@ -1,1 +1,1 @@
-from blobconfig import get_config
+from .blobconfig import get_config
