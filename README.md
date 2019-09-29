@@ -38,9 +38,12 @@ If a directory is passed (like "staging/proj2"), all files from the directory wi
 ### Config files
 
 Supports:
+
 Yaml: ".yaml" and ".yml" extensions
+
 JSON: ".json"
-and python files will be processed
+
+Python files will be processed
 
 So a file like this:
 ```python
