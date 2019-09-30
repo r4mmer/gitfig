@@ -1,6 +1,12 @@
-name: Upload gitfig to PyPi
+name: PyPi
 
-on: [push]
+on:
+  push:
+    branches:
+      - master
+# paths:
+#   - 'setup.py'
+#
 #   release:
 #     types: [created]
 

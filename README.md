@@ -1,5 +1,7 @@
 # GitFig
 
+![](https://github.com/r4mmer/gitfig/workflows/PyPi/badge.svg)
+
 This project aims to setup a git based configuration module
 
 ### Setup
