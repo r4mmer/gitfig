@@ -1,4 +1,10 @@
 language: python
+
+install:
+  - pip install .
+
+script: echo "No tests for now"
+
 deploy:
   provider: pypi
   user: r4mmer
