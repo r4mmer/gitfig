@@ -225,7 +225,7 @@ def check_config(fname):
     else:
         return False
 
-def get_config(fname, branch='master', repo_path=None, initdict=None, globalspace=None, **kwargs):
+def get_config(fname, branch='master', repo_path=None, initdict=None, globalspace=None, cleanup=False, **kwargs):
     '''
         `initdict` and extra kwargs will be updated into configuration
         branch: which branch to get configuration
@@ -237,9 +237,11 @@ def get_config(fname, branch='master', repo_path=None, initdict=None, globalspac
             raise Exception('No git config repo...')
         repo_path = os.environ.get('GITFIG_REPO_PATH')
     cf = BlobConfig()
-    cf.set_repo(repo_path=repo_path, branch=branch)
-    cf.sync_config(fname, globalspace=globalspace)
     if initdict:
         cf.update(initdict)
     cf.update(kwargs)
+    cf.set_repo(repo_path=repo_path, branch=branch)
+    cf.sync_config(fname, globalspace=globalspace)
+    if cleanup:
+        cf._repo.cleanup()
     return cf
