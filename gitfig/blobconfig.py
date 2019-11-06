@@ -165,7 +165,7 @@ class RepoObject(object):
             self._last_fetch = datetime.now()
 
     def cleanup(self):
-        if not self._repo_dir.beginswith(tempfile.gettempdir()):
+        if not self._repo_dir.startswith(tempfile.gettempdir()):
             return
         shutil.rmtree(self._repo_dir)
 
